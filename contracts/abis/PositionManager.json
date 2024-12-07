@@ -485,19 +485,6 @@
       {
         "indexed": true,
         "internalType": "uint256",
-        "name": "ethTransferGasLimit",
-        "type": "uint256"
-      }
-    ],
-    "name": "SetEthTransferGasLimit",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
         "name": "executionFee",
         "type": "uint256"
       }
@@ -516,6 +503,19 @@
       }
     ],
     "name": "SetMaxTimeDelay",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "natTransferGasLimit",
+        "type": "uint256"
+      }
+    ],
+    "name": "SetNatTransferGasLimit",
     "type": "event"
   },
   {
@@ -558,7 +558,7 @@
       },
       {
         "internalType": "address",
-        "name": "_weth",
+        "name": "_wnat",
         "type": "address"
       },
       {
@@ -703,7 +703,7 @@
       },
       {
         "internalType": "bool",
-        "name": "withdrawETH",
+        "name": "withdrawNAT",
         "type": "bool"
       },
       {
@@ -814,7 +814,7 @@
       },
       {
         "internalType": "bool",
-        "name": "_withdrawETH",
+        "name": "_withdrawNAT",
         "type": "bool"
       }
     ],
@@ -941,7 +941,7 @@
         "type": "address"
       }
     ],
-    "name": "createOpenPositionETH",
+    "name": "createOpenPositionNAT",
     "outputs": [
       {
         "internalType": "bytes32",
@@ -950,19 +950,6 @@
       }
     ],
     "stateMutability": "payable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "ethTransferGasLimit",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -1158,7 +1145,7 @@
       },
       {
         "internalType": "address",
-        "name": "_weth",
+        "name": "_wnat",
         "type": "address"
       },
       {
@@ -1204,6 +1191,19 @@
         "internalType": "uint40",
         "name": "",
         "type": "uint40"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "natTransferGasLimit",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -1334,7 +1334,7 @@
       },
       {
         "internalType": "bool",
-        "name": "isDepositedInETH",
+        "name": "isDepositedInNAT",
         "type": "bool"
       },
       {
@@ -1361,6 +1361,11 @@
         "internalType": "uint40",
         "name": "processBlockTime",
         "type": "uint40"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountOut",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -1530,19 +1535,6 @@
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "_ethTransferGasLimit",
-        "type": "uint256"
-      }
-    ],
-    "name": "setEthTransferGasLimit",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
         "name": "_executionFee",
         "type": "uint256"
       }
@@ -1561,6 +1553,19 @@
       }
     ],
     "name": "setMaxTimeDelay",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_natTransferGasLimit",
+        "type": "uint256"
+      }
+    ],
+    "name": "setNatTransferGasLimit",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1612,7 +1617,7 @@
   },
   {
     "inputs": [],
-    "name": "weth",
+    "name": "wnat",
     "outputs": [
       {
         "internalType": "address",

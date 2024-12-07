@@ -34,12 +34,16 @@ contract SettleManager is BasePositionManager, ISettleManager, IERC1155Receiver,
     function initialize(
         address _optionsMarket,
         address _controller,
-        address _weth,
+        address _wnat,
         IOptionsAuthority _authority
     ) public initializer {
         __Ownable_init();
-        __BasePositionManager_init__(_optionsMarket, _controller, _weth, _authority);
-
+        __BasePositionManager_init__(
+            _optionsMarket,
+            _controller,
+            _wnat,
+            _authority
+        );
     }
 
     /* =============== FUNCTIONS ============== */
@@ -75,17 +79,18 @@ contract SettleManager is BasePositionManager, ISettleManager, IERC1155Receiver,
         uint16 _underlyingAssetIndex,
         uint256 _optionTokenId,
         uint256 _minOutWhenSwap,
-        bool _withdrawETH
-    ) public nonReentrant returns (uint256) {
+        bool _withdrawNAT
+    ) public override nonReentrant returns (uint256) {
         require(_path.length == 1 || _path.length == 2, "SettleManager: Invalid path length");
 
-        if (_withdrawETH) {
-            require(_path[_path.length - 1] == weth, "SettleManager: Invalid path for ETH withdrawal");
+        if (_withdrawNAT) {
+            IController(controller).validateNATSupport();
+            require(_path[_path.length - 1] == wnat, "SettleManager: Invalid path for native token withdrawal");
         }
 
         uint40 blockTime = uint40(block.timestamp);
 
-        address sourceVault = IController(controller).getVaultAddressByOptionTokenId(_optionTokenId);
+        address vault = IController(controller).getVaultAddressByOptionTokenId(_optionTokenId);
 
         address optionsToken = IOptionsMarket(optionsMarket).getOptionsTokenByIndex(_underlyingAssetIndex);
         
@@ -95,7 +100,7 @@ contract SettleManager is BasePositionManager, ISettleManager, IERC1155Receiver,
         uint40 expiry = Utils.getExpiryByOptionTokenId(_optionTokenId);
         require(expiry <= blockTime, "SettleManager: Option not expired");
 
-        IController(controller).pluginERC1155Transfer(optionsToken, msg.sender, sourceVault, _optionTokenId, size);
+        IController(controller).pluginERC1155Transfer(optionsToken, msg.sender, vault, _optionTokenId, size);
         
         (uint256 amountOut, uint256 settlePrice) = IController(controller).pluginSettlePosition(
             msg.sender,
@@ -107,11 +112,11 @@ contract SettleManager is BasePositionManager, ISettleManager, IERC1155Receiver,
 
         if (amountOut > 0) {
             if (_path.length > 1) {
-                amountOut = _swap(sourceVault, _path, amountOut, _minOutWhenSwap, address(this));
+                amountOut = _swap(vault, _path, amountOut, _minOutWhenSwap, address(this));
             }
 
-            if (_withdrawETH) {
-                _transferOutETHWithGasLimitFallbackToWeth(amountOut, payable(msg.sender));
+            if (_withdrawNAT) {
+                _transferOutNATWithGasLimitFallbackToWnat(amountOut, payable(msg.sender));
             } else {
                 IERC20(_path[_path.length - 1]).safeTransfer(msg.sender, amountOut);
             }
@@ -136,7 +141,7 @@ contract SettleManager is BasePositionManager, ISettleManager, IERC1155Receiver,
         uint16 _underlyingAssetIndex,
         uint256[] memory _optionTokenIds,
         uint256[] memory _minOutWhenSwaps,
-        bool _withdrawETH
+        bool _withdrawNAT
     ) external nonReentrant {
         uint256 length = _paths.length;
 
@@ -144,7 +149,7 @@ contract SettleManager is BasePositionManager, ISettleManager, IERC1155Receiver,
         require(length == _minOutWhenSwaps.length, "SettleManager: Invalid input length");
 
         for (uint256 i = 0; i < length;) {
-            settlePosition(_paths[i], _underlyingAssetIndex, _optionTokenIds[i], _minOutWhenSwaps[i], _withdrawETH);
+            settlePosition(_paths[i], _underlyingAssetIndex, _optionTokenIds[i], _minOutWhenSwaps[i], _withdrawNAT);
             unchecked { i++; }
         }
     }

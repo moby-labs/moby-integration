@@ -27,7 +27,7 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         address[] path;                     // swap path
         uint256 amountIn;                   // amount of payment token (fixed value)
         uint256 minOutWhenSwap;             // minimum quantity of tokens desired when swapping
-        bool isDepositedInETH;              // whether the payment token is ETH
+        bool isDepositedInNAT;              // whether the payment token is NAT
         uint40 blockTime;                   // block time at the moment of request
         RequestStatus status;               // request status
         uint256 sizeOut;                    // quantity of the executed option token
@@ -45,7 +45,7 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         address[] path;                     // swap path
         uint256 minAmountOut;               // minimum quantity of payout token (variable value)
         uint256 minOutWhenSwap;             // minimum quantity of tokens desired when swapping
-        bool withdrawETH;                   // whether the payout token is ETH
+        bool withdrawNAT;                   // whether the payout token is NAT
         uint40 blockTime;                   // block time at the moment of request
         RequestStatus status;               // request status
         uint256 amountOut;                  // quantity of the payout token
@@ -166,7 +166,7 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
     function initialize(
         address _optionsMarket,
         address _controller,
-        address _weth,
+        address _wnat,
         IOptionsAuthority _authority,
         uint256 _executionFee
     ) public initializer {
@@ -174,11 +174,12 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         __BasePositionManager_init__(
             _optionsMarket,
             _controller,
-            _weth,
+            _wnat,
             _authority
         );
 
         executionFee = _executionFee;
+
         maxTimeDelay = 180; // position request will be cancelled if the request is not executed within maxTimeDelay
         positionDeadlineBuffer = 1800; // equal to 30 minutes
         copyTradeFeeRebateRate = 3000;
@@ -259,10 +260,10 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         require(_amountIn > 0, "PositionManager: Invalid amountIn");
         require(_leadTrader != msg.sender, "PositionManager: cannot set self as leadTrader");
         
-        _transferInETH(); // get executionFee
+        _transferInNAT(); // get executionFee
         IController(controller).pluginERC20Transfer(_path[0], msg.sender, address(this), _amountIn); // get payment token
         
-        (uint40 expiry,,, uint256 optionTokenId, bytes32[4] memory sortedOptionIds) = IController(controller).validateOpenPosition(
+        (uint40 expiry, uint256 optionTokenId, bytes32[4] memory sortedOptionIds) = IController(controller).validateOpenPosition(
             _underlyingAssetIndex,
             _length,
             _isBuys,
@@ -292,16 +293,16 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
      * The basic principle is the same as createOpenPosition (using msg.value instead of _amountIn)
      *
      * when the length of path is 1,
-     * - Buy Call, Buy Put, Buy Call Spread, Buy Put Spread: []
-     * - Sell Call: [WETH] => for collateral
-     * - Sell Put, Sell Call Spread, Sell Put Spread: []
+     * - Buy Call, Buy Put, Buy Call Spread, Buy Put Spread: [] => Not available
+     * - Sell Call: [WNAT] => When Native Token is the same as the collateral token
+     * - Sell Put, Sell Call Spread, Sell Put Spread: [] => Not available
      * 
      * when the length of path is 2,
-     * - Buy Call, Buy Put, Buy Call Spread, Buy Put Spread: [WETH, USDC]
-     * - Sell Call: [WETH, UnderlyingAsset]
-     * - Sell Put, Sell Call Spread, Sell Put Spread: [WETH, USDC]
+     * - Buy Call, Buy Put, Buy Call Spread, Buy Put Spread: [WNAT, USDC]
+     * - Sell Call: [WNAT, UnderlyingAsset] => if Native Token is the same as the collateral token, the path length should be 1
+     * - Sell Put, Sell Call Spread, Sell Put Spread: [WNAT, USDC]
      */
-    function createOpenPositionETH(
+    function createOpenPositionNAT(
         uint16 _underlyingAssetIndex,
         uint8 _length,
         bool[4] memory _isBuys,
@@ -312,20 +313,22 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         uint256 _minOutWhenSwap,
         address _leadTrader
     ) external payable nonReentrant returns (bytes32) {
+        IController(controller).validateNATSupport();
+
         require(msg.value >= executionFee, "PositionManager: Invalid execution fee");
         require(_path.length == 1 || _path.length == 2, "PositionManager: Invalid path length");
-        require(_path[0] == weth, "PositionManager: Invalid path");
+        require(_path[0] == wnat, "PositionManager: Invalid path");
         require(_leadTrader != msg.sender, "PositionManager: cannot set self as leadTrader");
 
-        _transferInETH(); // convert ETH to WETH
-
+        _transferInNAT(); // convert NAT to WNAT
+        
         uint256 amountIn;
         unchecked {
             amountIn = msg.value - executionFee; // get payment token after deducting executionFee
         }
         require(amountIn > 0, "PositionManager: Invalid amountIn");
 
-        (uint40 expiry,,, uint256 optionTokenId, bytes32[4] memory sortedOptionIds) = IController(controller).validateOpenPosition(
+        (uint40 expiry, uint256 optionTokenId, bytes32[4] memory sortedOptionIds) = IController(controller).validateOpenPosition(
             _underlyingAssetIndex,
             _length,
             _isBuys,
@@ -385,14 +388,15 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         address[] memory _path,
         uint256 _minAmountOut,
         uint256 _minOutWhenSwap,
-        bool _withdrawETH
+        bool _withdrawNAT
     ) external payable nonReentrant returns (bytes32) {
         require(msg.value == executionFee, "PositionManager: Invalid execution fee");
         require(_path.length == 1 || _path.length == 2, "PositionManager: Invalid path length");
         require(_size > 0, "PositionManager: Invalid size");
         
-        if (_withdrawETH) {
-            require(_path[_path.length - 1] == weth, "PositionManager: Invalid path for ETH withdrawal");
+        if (_withdrawNAT) {
+            IController(controller).validateNATSupport();
+            require(_path[_path.length - 1] == wnat, "PositionManager: Invalid path for native token withdrawal");
         }
 
         address optionsToken = IOptionsMarket(optionsMarket).getOptionsTokenByIndex(_underlyingAssetIndex);
@@ -400,9 +404,9 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
 
         uint40 expiry = Utils.getExpiryByOptionTokenId(_optionTokenId);
         uint40 blockTime = uint40(block.timestamp);
-        require(blockTime + positionDeadlineBuffer < expiry, "PositionManager: unable to open position due to deadline buffer or option expired");
+        require(blockTime + positionDeadlineBuffer < expiry, "PositionManager: unable to close position due to deadline buffer or option expired");
 
-        _transferInETH(); // receive executionFee
+        _transferInNAT(); // receive executionFee
         IController(controller).pluginERC1155Transfer(optionsToken, msg.sender, address(this), _optionTokenId, _size); // receive option token
 
         return _createClosePosition(
@@ -414,7 +418,7 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
             _path,
             _minAmountOut,
             _minOutWhenSwap,
-            _withdrawETH
+            _withdrawNAT
         );
     }
 
@@ -435,8 +439,7 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         }
 
         while (index < _endIndex) {
-            bytes32 key = positionRequestKeys[index];           // positionRequestKeys contains openPositionRequests and closePositionRequests
-            bool isOpenPosition = positionRequestTypes[index];  // positionRequestTypes is used to distinguish between the two
+            (bytes32 key, bool isOpenPosition) = getPositionRequestInfo(index);
 
             bool shouldContinue = true;
             bool shouldIncreaseIndex = true;
@@ -502,21 +505,17 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         uint40 blockTime = uint40(block.timestamp);
         require(request.blockTime + maxTimeDelay >= blockTime, "PositionManager: Request expired");
 
-        (uint16 underlyingAssetIndex, uint40 expiry,, uint8 length, bool[4] memory isBuys,, bool[4] memory isCalls,) = Utils.parseOptionTokenId(request.optionTokenId);
-        (,, address executeVault, uint256 optionTokenId,) = IController(controller).validateOpenPosition(
-            underlyingAssetIndex,
-            length,
-            isBuys,
-            request.optionIds,
-            isCalls
-        );
-        require(request.optionTokenId == optionTokenId, "PositionManager: Invalid optionTokenId");
+        (,,, uint8 length,,,,) = Utils.parseOptionTokenId(request.optionTokenId);
+        uint40 expiry = IOptionsMarket(optionsMarket).validateOptionIds(request.underlyingAssetIndex, length, request.optionIds);
+        require(expiry == request.expiry, "PositionManager: Invalid expiry");
+
+        address vault = IController(controller).getVaultAddressByOptionTokenId(request.optionTokenId);
 
         uint256 amountIn = request.amountIn;
         if (request.path.length > 1) {
-            amountIn = _swap(executeVault, request.path, request.amountIn, request.minOutWhenSwap, address(this));
+            amountIn = _swap(vault, request.path, request.amountIn, request.minOutWhenSwap, address(this));
         }
-        IERC20(request.path[request.path.length - 1]).safeTransfer(executeVault, amountIn);
+        IERC20(request.path[request.path.length - 1]).safeTransfer(vault, amountIn);
 
         (uint256 sizeOut, uint256 amountOut, uint256 executionPrice) = IController(controller).pluginOpenPosition(
             request.account,
@@ -525,7 +524,7 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
             request.optionTokenId,
             request.minSize,
             address(this),
-            executeVault
+            vault
         );
 
         if (sizeOut > 0) {
@@ -539,7 +538,7 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
             IERC20(mainStableAsset).safeTransfer(request.account, amountOut);
         }
 
-        _transferOutETHWithGasLimitFallbackToWeth(executionFee, _executionFeeReceiver);
+        _transferOutNATWithGasLimitFallbackToWnat(executionFee, _executionFeeReceiver);
 
         request.status = RequestStatus.Executed;
         request.sizeOut = sizeOut;
@@ -574,13 +573,13 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         bool shouldCancel = request.blockTime <= blockTime;
         if (!shouldCancel) { return false; }
 
-        if (request.isDepositedInETH) {
-            _transferOutETHWithGasLimitFallbackToWeth(request.amountIn, payable(request.account));
+        if (request.isDepositedInNAT) {
+            _transferOutNATWithGasLimitFallbackToWnat(request.amountIn, payable(request.account));
         } else {
             IERC20(request.path[0]).safeTransfer(request.account, request.amountIn);
         }
         
-        _transferOutETHWithGasLimitFallbackToWeth(executionFee, _executionFeeReceiver);
+        _transferOutNATWithGasLimitFallbackToWnat(executionFee, _executionFeeReceiver);
 
         request.status = RequestStatus.Cancelled;
         request.processBlockTime = blockTime;
@@ -606,16 +605,14 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         if (request.status == RequestStatus.Executed || request.status == RequestStatus.Cancelled) { return true; }
 
         uint40 blockTime = uint40(block.timestamp);
+        require(request.expiry > blockTime, "PositionManager: Option expired");
         require(request.blockTime + maxTimeDelay >= blockTime, "PositionManager: Request expired");
 
-        uint40 expiry = Utils.getExpiryByOptionTokenId(request.optionTokenId);
-        require (expiry > blockTime, "PositionManager: Option expired");
-
-        (, address targetVault) = IController(controller).getVaultIndexAndAddressByTimeGap(blockTime, request.expiry);
+        address vault = IController(controller).getVaultAddressByOptionTokenId(request.optionTokenId);
         
         address optionsToken = IOptionsMarket(optionsMarket).getOptionsTokenByIndex(request.underlyingAssetIndex);
         
-        IERC1155Base(optionsToken).safeTransferFrom(address(this), targetVault, request.optionTokenId, request.size, "");
+        IERC1155Base(optionsToken).safeTransferFrom(address(this), vault, request.optionTokenId, request.size, "");
 
         (uint256 amountOut, uint256 executionPrice) = IController(controller).pluginClosePosition(
             request.account,
@@ -625,22 +622,22 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
             request.path[0],
             request.minAmountOut,
             address(this),
-            targetVault
+            vault
         );
         
         if (amountOut > 0) {
             if (request.path.length > 1) {
-                amountOut = _swap(targetVault, request.path, amountOut, request.minOutWhenSwap, address(this));
+                amountOut = _swap(vault, request.path, amountOut, request.minOutWhenSwap, address(this));
             }
 
-            if (request.withdrawETH) {
-                _transferOutETHWithGasLimitFallbackToWeth(amountOut, payable(request.account));
+            if (request.withdrawNAT) {
+                _transferOutNATWithGasLimitFallbackToWnat(amountOut, payable(request.account));
             } else {
                 IERC20(request.path[request.path.length - 1]).safeTransfer(request.account, amountOut);
             }
         }
 
-        _transferOutETHWithGasLimitFallbackToWeth(executionFee, _executionFeeReceiver);
+        _transferOutNATWithGasLimitFallbackToWnat(executionFee, _executionFeeReceiver);
         
         request.status = RequestStatus.Executed;
         request.amountOut = amountOut;
@@ -677,7 +674,7 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
 
         IERC1155Base(optionsToken).safeTransferFrom(address(this), request.account, request.optionTokenId, request.size, "");
 
-        _transferOutETHWithGasLimitFallbackToWeth(executionFee, _executionFeeReceiver);
+        _transferOutNATWithGasLimitFallbackToWnat(executionFee, _executionFeeReceiver);
 
         request.status = RequestStatus.Cancelled;
         request.processBlockTime = blockTime;
@@ -717,6 +714,12 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         return request.path;
     }
 
+    function getPositionRequestInfo(uint256 _requestIndex) public view override returns (bytes32, bool) {
+        bytes32 key = positionRequestKeys[_requestIndex];           // positionRequestKeys contains openPositionRequests and closePositionRequests
+        bool isOpenPosition = positionRequestTypes[_requestIndex];  // positionRequestTypes is used to distinguish between open and close
+        return (key, isOpenPosition);
+    }
+
     function _createOpenPosition(
         address _account,
         uint16 _underlyingAssetIndex,
@@ -727,7 +730,7 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         address[] memory _path,
         uint256 _amountIn,
         uint256 _minOutWhenSwap,
-        bool _isDepositedInETH,
+        bool _isDepositedInNAT,
         address _leadTrader
     ) internal returns (bytes32) {
         uint40 blockTime = uint40(block.timestamp);
@@ -742,7 +745,7 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
             path: _path,
             amountIn: _amountIn,
             minOutWhenSwap: _minOutWhenSwap,
-            isDepositedInETH: _isDepositedInETH,
+            isDepositedInNAT: _isDepositedInNAT,
             blockTime: blockTime,
             status: RequestStatus.Pending,
             sizeOut: 0,
@@ -783,7 +786,7 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
         address[] memory _path,
         uint256 _minAmountOut,
         uint256 _minOutWhenSwap,
-        bool _withdrawETH
+        bool _withdrawNAT
     ) internal returns (bytes32) {
         uint40 blockTime = uint40(block.timestamp);
 
@@ -796,7 +799,7 @@ contract PositionManager is BasePositionManager, IPositionManager, IERC1155Recei
             path: _path,
             minAmountOut: _minAmountOut,
             minOutWhenSwap: _minOutWhenSwap,
-            withdrawETH: _withdrawETH,
+            withdrawNAT: _withdrawNAT,
             blockTime: blockTime,
             status: RequestStatus.Pending,
             amountOut: 0,

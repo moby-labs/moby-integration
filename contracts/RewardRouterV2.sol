@@ -6,7 +6,7 @@ import "../libraries/Address.sol";
 import "../tokens/interfaces/IERC20.sol";
 import "../tokens/libraries/SafeERC20.sol";
 import "../tokens/interfaces/IMintable.sol";
-import "../tokens/interfaces/IWETH.sol";
+import "../tokens/interfaces/IWNAT.sol";
 import "./interfaces/IRewardTracker.sol";
 import "./interfaces/IRewardRouterV2.sol";
 import "./interfaces/IVester.sol";
@@ -21,31 +21,36 @@ contract RewardRouterV2 is IRewardRouterV2, OwnableUpgradeable, ReentrancyGuardU
     using SafeERC20 for IERC20;
     using Address for address payable;
 
-    address public weth;
+    address public wnat;
     address public olp;
 
     address public override feeOlpTracker;
     address public olpManager;
 
+    address public controller;
+    
+    event SetController(address indexed controller);
     event StakeOlp(address indexed account, uint256 amount);
     event UnstakeOlp(address indexed account, uint256 amount);
 
     receive() external payable {
-        require(msg.sender == weth, "Router: invalid sender");
+        require(msg.sender == wnat, "Router: invalid sender");
     }
 
     function initialize(
-        address _weth,
+        address _wnat,
         address _olp,
         address _feeOlpTracker,
         address _olpManager,
-        IOptionsAuthority _authority
+        IOptionsAuthority _authority,
+        address _controller
     ) external initializer {
         require(
-            _weth != address(0) &&
+            _wnat != address(0) &&
             _olp != address(0) &&
             _feeOlpTracker != address(0) &&
-            _olpManager != address(0),
+            _olpManager != address(0) &&
+            _controller != address(0),
             "Router: invalid addresses"
         );
 
@@ -53,11 +58,18 @@ contract RewardRouterV2 is IRewardRouterV2, OwnableUpgradeable, ReentrancyGuardU
         __ReentrancyGuard_init();
         __AuthorityUtil_init__(_authority);
 
-        weth = _weth;
+        wnat = _wnat;
         olp = _olp;
 
         feeOlpTracker = _feeOlpTracker;
         olpManager = _olpManager;
+
+        controller = _controller;
+    }
+
+    function setController(address _controller) external onlyAdmin {
+        controller = _controller;
+        emit SetController(_controller);
     }
 
     // to help users who accidentally send their tokens to this contract
@@ -65,35 +77,38 @@ contract RewardRouterV2 is IRewardRouterV2, OwnableUpgradeable, ReentrancyGuardU
         IERC20(_token).safeTransfer(_account, _amount);
     }
 
-    // when buying olp with token other than ETH
+    // when buying olp with token other than NAT
     function mintAndStakeOlp(address _token, uint256 _amount, uint256 _minUsdg, uint256 _minOlp) external nonReentrant returns (uint256) {
         return _mintAndStakeOlp(msg.sender, msg.sender, _token, _amount, _minUsdg, _minOlp);
     }
 
-    // when buying olp with ETH
-    function mintAndStakeOlpETH(uint256 _minUsdg, uint256 _minOlp) external payable nonReentrant returns (uint256) {
+    // when buying olp with NAT
+    function mintAndStakeOlpNAT(uint256 _minUsdg, uint256 _minOlp) external payable nonReentrant returns (uint256) {
+        IController(controller).validateNATSupport();
         require(msg.value > 0, "RewardRouter: invalid msg.value");
 
-        // convert ETH to WETH
+        // convert NAT to WNAT
         // get approval from Olp Manager
-        IWETH(weth).deposit{value: msg.value}();
-        IERC20(weth).approve(olpManager, msg.value);
+        IWNAT(wnat).deposit{value: msg.value}();
+        IERC20(wnat).approve(olpManager, msg.value);
 
-        return _mintAndStakeOlp(address(this), msg.sender, weth, msg.value, _minUsdg, _minOlp);
+        return _mintAndStakeOlp(address(this), msg.sender, wnat, msg.value, _minUsdg, _minOlp);
     }
 
-    // when selling olp for token other than ETH
+    // when selling olp for token other than NAT
     function unstakeAndRedeemOlp(address _tokenOut, uint256 _olpAmount, uint256 _minOut, address _receiver) external nonReentrant returns (uint256) {
         return _unstakeAndRedeemOlp(msg.sender, _tokenOut, _olpAmount, _minOut, _receiver);
     }
 
-    // when selling olp for ETH
-    function unstakeAndRedeemOlpETH(uint256 _olpAmount, uint256 _minOut, address payable _receiver) external nonReentrant returns (uint256) {
-        uint256 amountOut = _unstakeAndRedeemOlp(msg.sender, weth, _olpAmount, _minOut, address(this));
+    // when selling olp for NAT
+    function unstakeAndRedeemOlpNAT(uint256 _olpAmount, uint256 _minOut, address payable _receiver) external nonReentrant returns (uint256) {
+        IController(controller).validateNATSupport();
+        
+        uint256 amountOut = _unstakeAndRedeemOlp(msg.sender, wnat, _olpAmount, _minOut, address(this));
 
-        // convert WETH to ETH
-        // send ETH to receiver
-        IWETH(weth).withdraw(amountOut);
+        // convert WNAT to NAT
+        // send NAT to receiver
+        IWNAT(wnat).withdraw(amountOut);
         _receiver.sendValue(amountOut);
 
         return amountOut;
@@ -104,18 +119,21 @@ contract RewardRouterV2 is IRewardRouterV2, OwnableUpgradeable, ReentrancyGuardU
         IRewardTracker(feeOlpTracker).claimForAccount(account, account);
     }
 
-    // to help users withdraw their rewards to ETH
+    // to help users withdraw their rewards to NAT (only valid when reward token is wnat)
     function handleRewards(
-        bool _shouldClaimWeth, // (will be always true)
-        bool _shouldConvertWethToEth
+        bool _shouldClaimReward, // will be always true
+        bool _shouldConvertRewardToNAT
     ) external nonReentrant {
         address account = msg.sender;
 
-        if (_shouldClaimWeth) {
-            if (_shouldConvertWethToEth) {
-                uint256 wethAmount = IRewardTracker(feeOlpTracker).claimForAccount(account, address(this));
-                IWETH(weth).withdraw(wethAmount);
-                payable(account).sendValue(wethAmount);
+        if (_shouldClaimReward) {
+            if (_shouldConvertRewardToNAT) {
+                address rewardToken = IRewardTracker(feeOlpTracker).rewardToken(); // reward token is normally weth
+                require(rewardToken == wnat, "RewardRouter: invalid rewardToken");
+
+                uint256 rewardAmount = IRewardTracker(feeOlpTracker).claimForAccount(account, address(this));
+                IWNAT(wnat).withdraw(rewardAmount);
+                payable(account).sendValue(rewardAmount);
             } else {
                 IRewardTracker(feeOlpTracker).claimForAccount(account, account);
             }

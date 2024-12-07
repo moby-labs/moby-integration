@@ -37,6 +37,19 @@
       {
         "indexed": true,
         "internalType": "address",
+        "name": "controller",
+        "type": "address"
+      }
+    ],
+    "name": "SetController",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
         "name": "account",
         "type": "address"
       },
@@ -104,6 +117,19 @@
   },
   {
     "inputs": [],
+    "name": "controller",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "feeOlpTracker",
     "outputs": [
       {
@@ -119,12 +145,12 @@
     "inputs": [
       {
         "internalType": "bool",
-        "name": "_shouldClaimWeth",
+        "name": "_shouldClaimReward",
         "type": "bool"
       },
       {
         "internalType": "bool",
-        "name": "_shouldConvertWethToEth",
+        "name": "_shouldConvertRewardToNAT",
         "type": "bool"
       }
     ],
@@ -137,7 +163,7 @@
     "inputs": [
       {
         "internalType": "address",
-        "name": "_weth",
+        "name": "_wnat",
         "type": "address"
       },
       {
@@ -158,6 +184,11 @@
       {
         "internalType": "contract IOptionsAuthority",
         "name": "_authority",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_controller",
         "type": "address"
       }
     ],
@@ -213,7 +244,7 @@
         "type": "uint256"
       }
     ],
-    "name": "mintAndStakeOlpETH",
+    "name": "mintAndStakeOlpNAT",
     "outputs": [
       {
         "internalType": "uint256",
@@ -287,6 +318,19 @@
     "inputs": [
       {
         "internalType": "address",
+        "name": "_controller",
+        "type": "address"
+      }
+    ],
+    "name": "setController",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
         "name": "newOwner",
         "type": "address"
       }
@@ -348,7 +392,7 @@
         "type": "address"
       }
     ],
-    "name": "unstakeAndRedeemOlpETH",
+    "name": "unstakeAndRedeemOlpNAT",
     "outputs": [
       {
         "internalType": "uint256",
@@ -357,19 +401,6 @@
       }
     ],
     "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "weth",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -393,6 +424,19 @@
     "name": "withdrawToken",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "wnat",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
